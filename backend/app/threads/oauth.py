@@ -175,7 +175,9 @@ def save_connection(
         conn.username = username
     if scopes is not None:
         conn.scopes = scopes
-    conn.issued_at = conn.issued_at or utcnow()
+    # A new token was just issued (OAuth or refresh): restart the refresh clock.
+    conn.issued_at = utcnow()
+    conn.last_refreshed_at = None
     db.add(conn)
     db.commit()
     return conn

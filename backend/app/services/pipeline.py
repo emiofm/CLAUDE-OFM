@@ -15,6 +15,7 @@ from ..logging_conf import get_logger
 from ..models import Creator, Post, ReferenceSet, SearchJob, SearchResult
 from ..threads.client import ThreadsClient
 from ..threads.errors import (
+    PERMISSION_CODES,
     ThreadsAPIError,
     ThreadsAuthError,
     ThreadsNotConnectedError,
@@ -51,6 +52,16 @@ AUTH_ERRORS = (ThreadsNotConnectedError, ThreadsAuthError)
 FATAL_ERRORS = (*AUTH_ERRORS, ThreadsPermissionError)
 
 
+PREFETCH_CONCURRENCY = 4
+MAX_POSTS_PER_CREATOR_ANALYSED = 100
+
+
+@dataclass
+class Prefetched:
+    profile: dict | None  # cached profile_lookup result, None if disabled/blocked
+    posts: list[dict] | None  # profile_posts, None if unavailable
+
+
 @dataclass
 class PipelineDeps:
     client: ThreadsClient
@@ -65,6 +76,9 @@ class SearchPipeline:
         self.deps = deps
         self.cfg = cfg
         self.warnings: list[str] = []
+        self._profile_calls_blocked = False  # set on 429 / local budget exhausted
+        self._lookup_denied = False
+        self._posts_denied = False
 
     # -------------------------------------------------------------- helpers
     def _progress(self, job: SearchJob, **kw) -> None:
@@ -140,27 +154,107 @@ class SearchPipeline:
         post.fetched_at = utcnow()
         return post
 
-    async def _profile(self, creator: Creator) -> None:
+    # ------------------------------------------------- profile prefetching
+    async def _fetch_profile(self, username: str) -> dict | None:
+        """profile_lookup via the AudienceProvider, with TTL cache.
+
+        Returns the cached dict, or None when lookups are disabled/blocked.
+        """
         if not self.cfg.search.lookup_profiles:
-            return
-        key = f"profile:{creator.username}"
+            return None
+        key = f"profile:{username}"
         cached = cache_get(self.db, key)
-        if cached is None:
-            result = await self.deps.audience.get_audience(creator.username)
-            profile = getattr(self.deps.audience, "last_profile", None)
-            cached = {
-                "status": result.status,
-                "follower_count": result.follower_count,
-                "source": result.source,
-                "profile": profile,
-            }
-            if result.status == "permission_denied":
+        if cached is not None:
+            return cached
+        if self._profile_calls_blocked or self._lookup_denied:
+            return None
+        try:
+            result = await self.deps.audience.get_audience(username)
+        except ThreadsRateLimitError as exc:
+            self._block_profile_calls(exc)
+            return None
+        cached = {
+            "status": result.status,
+            "follower_count": result.follower_count,
+            "source": result.source,
+            "profile": result.profile,
+        }
+        if result.status == "permission_denied":
+            self._lookup_denied = True
+            self._warn(
+                "profile_lookup is not permitted for this app (threads_profile_discovery). "
+                "Follower counts and bios are unavailable."
+            )
+        if result.status != "error":
+            cache_set(self.db, key, cached, self.cfg.cache.profile_ttl_hours)
+        return cached
+
+    async def _fetch_profile_posts(self, username: str, profile: dict | None) -> list[dict] | None:
+        if not self.cfg.search.fetch_profile_posts:
+            return None
+        if profile and profile.get("status") in ("permission_denied", "not_found"):
+            return None
+        key = f"profile_posts:{username}"
+        cached = cache_get(self.db, key)
+        if cached is not None:
+            return cached
+        if self._profile_calls_blocked or self._posts_denied:
+            return None
+        since = int((utcnow() - timedelta(days=90)).timestamp())
+        try:
+            posts = await self.deps.client.profile_posts(username, since=since)
+        except AUTH_ERRORS:
+            raise
+        except ThreadsRateLimitError as exc:
+            self._block_profile_calls(exc)
+            return None
+        except ThreadsPermissionError as exc:
+            # App-wide permission problem: stop asking for every creator.
+            if exc.code in PERMISSION_CODES:
+                self._posts_denied = True
                 self._warn(
-                    "profile_lookup is not permitted for this app (threads_profile_discovery). "
-                    "Follower counts and bios are unavailable."
+                    "profile_posts is not permitted; activity uses keyword-search posts only (lower bound)."
                 )
-            if result.status != "error":
-                cache_set(self.db, key, cached, self.cfg.cache.profile_ttl_hours)
+            return None
+        except ThreadsAPIError as exc:
+            log_threads.warning("profile_posts failed", username=username, error=type(exc).__name__)
+            return None
+        cache_set(self.db, key, posts, self.cfg.cache.posts_ttl_hours)
+        return posts
+
+    def _block_profile_calls(self, exc: ThreadsRateLimitError) -> None:
+        if not self._profile_calls_blocked:
+            self._profile_calls_blocked = True
+            log_threads.warning("rate limited: no more profile calls this job")
+            self._warn(exc.user_message + " Remaining creators were analysed with cached/search data only.")
+
+    async def _prefetch_profiles(self, job: SearchJob, usernames: list[str]) -> dict[str, Prefetched]:
+        """Fetch profile + recent posts for all candidates with bounded concurrency.
+
+        DB access here is synchronous and never spans an ``await``, so the
+        shared session is safe across these coroutines.
+        """
+        sem = asyncio.Semaphore(PREFETCH_CONCURRENCY)
+        out: dict[str, Prefetched] = {}
+
+        async def one(username: str) -> None:
+            async with sem:
+                profile = await self._fetch_profile(username)
+                posts = await self._fetch_profile_posts(username, profile)
+                out[username] = Prefetched(profile, posts)
+                self._progress(job, profiles_done=len(out))
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                for u in usernames:
+                    tg.create_task(one(u))
+        except BaseExceptionGroup as eg:  # surface the first real error (e.g. 401)
+            raise eg.exceptions[0] from None
+        return out
+
+    def _apply_profile(self, creator: Creator, cached: dict | None) -> None:
+        if cached is None:
+            return
         creator.profile_lookup_status = cached["status"]
         creator.profile_checked_at = utcnow()
         creator.follower_count = cached["follower_count"]
@@ -181,30 +275,6 @@ class SearchPipeline:
             ]:
                 v = profile.get(key2)
                 setattr(creator, field, v if isinstance(v, int) and not isinstance(v, bool) else None)
-
-    async def _profile_posts(self, creator: Creator) -> list[dict] | None:
-        if not self.cfg.search.fetch_profile_posts or creator.profile_lookup_status in (
-            "permission_denied",
-            "not_found",
-        ):
-            return None
-        key = f"profile_posts:{creator.username}"
-        cached = cache_get(self.db, key)
-        if cached is not None:
-            return cached
-        since = int((utcnow() - timedelta(days=90)).timestamp())
-        try:
-            posts = await self.deps.client.profile_posts(creator.username, since=since)
-        except AUTH_ERRORS:
-            raise
-        except ThreadsPermissionError:
-            self._warn("profile_posts is not permitted; activity uses keyword-search posts only (lower bound).")
-            return None
-        except ThreadsAPIError as exc:
-            log_threads.warning("profile_posts failed", username=creator.username, error=type(exc).__name__)
-            return None
-        cache_set(self.db, key, posts, self.cfg.cache.posts_ttl_hours)
-        return posts
 
     async def _embed_posts(self, posts: list[Post]) -> list[tuple[Post, np.ndarray]]:
         model = self.deps.embedder.model_name
@@ -276,19 +346,23 @@ class SearchPipeline:
             unique_creators=len(creators),
             analysing=len(candidates),
         )
-        self._progress(job, stage="analysing", creators_found=len(creators), creators_total=len(candidates))
+        self._progress(job, creators_found=len(creators))
 
+        ignored = set(
+            self.db.scalars(
+                select(Creator.username).where(
+                    Creator.status == "ignored", Creator.username.in_([c.username for c in candidates])
+                )
+            ).all()
+        )
+        candidates = [c for c in candidates if c.username not in ignored]
+        self._progress(job, stage="profiles", creators_total=len(candidates), profiles_done=0)
+        prefetched = await self._prefetch_profiles(job, [c.username for c in candidates])
+
+        self._progress(job, stage="analysing", creators_done=0)
         results: list[SearchResult] = []
         for i, cand in enumerate(candidates, 1):
-            try:
-                res = await self._analyse(job, cand, keywords, filters, ref_centroid)
-            except FATAL_ERRORS:
-                raise
-            except ThreadsRateLimitError as exc:
-                self._warn(exc.user_message + " Remaining creators were analysed with cached data only.")
-                self.cfg.search.lookup_profiles = False
-                self.cfg.search.fetch_profile_posts = False
-                res = await self._analyse(job, cand, keywords, filters, ref_centroid)
+            res = await self._analyse(job, cand, keywords, filters, ref_centroid, prefetched.get(cand.username))
             if res is not None:
                 results.append(res)
             self._progress(job, creators_done=i)
@@ -307,6 +381,7 @@ class SearchPipeline:
         keywords: list[str],
         filters: dict,
         ref_centroid: np.ndarray | None,
+        pre: Prefetched | None = None,
     ) -> SearchResult | None:
         cfg = self.cfg
         creator = self._upsert_creator(cand.username)
@@ -317,9 +392,10 @@ class SearchPipeline:
             for pid, raw in cand.posts.items()
         ]
         self.db.flush()
-        await self._profile(creator)
+        pre = pre or Prefetched(None, None)
+        self._apply_profile(creator, pre.profile)
 
-        profile_raw = await self._profile_posts(creator)
+        profile_raw = pre.posts
         if profile_raw is not None:
             for raw in profile_raw:
                 if raw.get("id"):
@@ -342,7 +418,10 @@ class SearchPipeline:
         act = activity_score(counts, cfg.activity)
 
         all_posts = self.db.scalars(
-            select(Post).where(Post.creator_id == creator.id).order_by(Post.timestamp.desc())
+            select(Post)
+            .where(Post.creator_id == creator.id)
+            .order_by(Post.timestamp.desc())
+            .limit(MAX_POSTS_PER_CREATOR_ANALYSED)
         ).all()
         texts = [creator.bio] + [p.text for p in all_posts]
         sig = detect_signals(texts)

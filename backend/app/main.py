@@ -10,7 +10,7 @@ from .config import get_settings
 from .db import init_db
 from .deps import default_client_factory, default_deps_factory, default_embedder_factory
 from .logging_conf import setup_logging
-from .routers import auth, creators, references, search, settings as settings_router
+from .routers import auth, creators, models_accounts, references, search, settings as settings_router
 from .threads.errors import ThreadsAPIError
 
 
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     s = get_settings()
-    app = FastAPI(title="Creator Finder API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Threads Purge API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in s.cors_origins.split(",") if o.strip()],
@@ -47,7 +47,14 @@ def create_app() -> FastAPI:
     def health():
         return {"ok": True}
 
-    for r in (auth.router, references.router, search.router, creators.router, settings_router.router):
+    for r in (
+        auth.router,
+        references.router,
+        search.router,
+        creators.router,
+        models_accounts.router,
+        settings_router.router,
+    ):
         app.include_router(r)
     return app
 

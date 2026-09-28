@@ -4,16 +4,22 @@ The application never invents follower counts. A provider returns an int only
 when its source legitimately reports one, and ``None`` otherwise.
 
 To add a compliant third-party source, subclass ``AudienceProvider`` and
-register it in ``build_audience_provider``.
+return it from ``default_deps_factory`` in ``app/deps.py``.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..logging_conf import get_logger
 from ..threads.client import ThreadsClient
-from ..threads.errors import ThreadsAPIError, ThreadsPermissionError
+from ..threads.errors import (
+    ThreadsAPIError,
+    ThreadsAuthError,
+    ThreadsNotConnectedError,
+    ThreadsPermissionError,
+    ThreadsRateLimitError,
+)
 
 log = get_logger("AUDIENCE")
 
@@ -23,6 +29,8 @@ class AudienceResult:
     follower_count: int | None
     source: str | None
     status: str  # ok / unavailable / not_found / permission_denied / error
+    # Raw public profile fields returned by the source (if any).
+    profile: dict | None = field(default=None)
 
 
 class AudienceProvider(ABC):
@@ -59,15 +67,16 @@ class OfficialThreadsAudienceProvider(AudienceProvider):
 
     def __init__(self, client: ThreadsClient):
         self.client = client
-        self.last_profile: dict | None = None
 
     async def get_follower_count(self, username: str) -> int | None:
         return (await self.get_audience(username)).follower_count
 
     async def get_audience(self, username: str) -> AudienceResult:
-        self.last_profile = None
+        """Rate-limit and auth errors propagate so callers stop calling the API."""
         try:
             profile = await self.client.profile_lookup(username)
+        except (ThreadsRateLimitError, ThreadsAuthError, ThreadsNotConnectedError):
+            raise
         except ThreadsPermissionError:
             log.warning("profile_lookup not permitted", username=username)
             return AudienceResult(None, None, "permission_denied")
@@ -76,8 +85,7 @@ class OfficialThreadsAudienceProvider(AudienceProvider):
             return AudienceResult(None, None, "error")
         if profile is None:
             return AudienceResult(None, None, "not_found")
-        self.last_profile = profile
         count = profile.get("follower_count")
         if isinstance(count, bool) or not isinstance(count, int):
-            return AudienceResult(None, None, "unavailable")
-        return AudienceResult(count, self.name, "ok")
+            return AudienceResult(None, None, "unavailable", profile)
+        return AudienceResult(count, self.name, "ok", profile)

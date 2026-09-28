@@ -203,3 +203,61 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict | list | str | int | float | None] = mapped_column(JSON)
+
+
+# --------------------------------------------------------------------------
+# Models / Accounts (Threads Purge "Models/Accs" section)
+# --------------------------------------------------------------------------
+class Talent(Base):
+    """A model (person) managed by the agency. Table name avoids SQL keywords."""
+
+    __tablename__ = "talent_models"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    accounts: Mapped[list["ManagedAccount"]] = relationship(
+        back_populates="talent",
+        cascade="all, delete-orphan",
+        order_by="ManagedAccount.position, ManagedAccount.id",
+    )
+
+
+class ManagedAccount(Base):
+    """A Threads account belonging to a model."""
+
+    __tablename__ = "managed_accounts"
+    __table_args__ = (UniqueConstraint("talent_id", "username"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    talent_id: Mapped[int] = mapped_column(ForeignKey("talent_models.id", ondelete="CASCADE"), index=True)
+    username: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    talent: Mapped[Talent] = relationship(back_populates="accounts")
+    profiles: Mapped[list["TargetProfile"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", order_by="TargetProfile.id"
+    )
+
+
+class TargetProfile(Base):
+    """A profile saved to an account's list (checkbox = selected)."""
+
+    __tablename__ = "target_profiles"
+    __table_args__ = (UniqueConstraint("account_id", "username"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("managed_accounts.id", ondelete="CASCADE"), index=True)
+    username: Mapped[str] = mapped_column(String(64))
+    selected: Mapped[bool] = mapped_column(default=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(String(32))  # manual / search
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    account: Mapped[ManagedAccount] = relationship(back_populates="profiles")
