@@ -1,0 +1,6 @@
+# Optional: real CLIP / SigLIP image embeddings.
+# Install with: pip install -r requirements-ml.txt
+# (CPU-only torch wheels: pip install torch --index-url https://download.pytorch.org/whl/cpu)
+torch>=2.3
+transformers>=4.44
+sentencepiece>=0.2  # required by SigLIP processors
