@@ -19,17 +19,17 @@ export default function KeywordInput({ value, onChange }: { value: string[]; onC
 
   return (
     <div>
-      <div className="input flex min-h-[42px] flex-wrap items-center gap-1.5 !py-1.5">
+      <div className="input flex min-h-[44px] flex-wrap items-center gap-1.5 !py-1.5">
         {value.map((k) => (
-          <span key={k} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-sm text-brand-700">
+          <span key={k} className="inline-flex animate-scale-in items-center gap-1 rounded-lg bg-brand-500/15 px-2 py-0.5 text-sm text-brand-200 ring-1 ring-brand-500/25">
             {k}
-            <button type="button" className="text-brand-500 hover:text-brand-700" onClick={() => onChange(value.filter((x) => x !== k))}>
+            <button type="button" className="text-brand-300/70 transition hover:text-white" onClick={() => onChange(value.filter((x) => x !== k))}>
               ×
             </button>
           </span>
         ))}
         <input
-          className="min-w-[140px] flex-1 border-0 bg-transparent p-1 text-sm outline-none"
+          className="min-w-[140px] flex-1 border-0 bg-transparent p-1 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
           placeholder={value.length ? "Add keyword…" : "brunette, lifestyle creator, …"}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -47,7 +47,7 @@ export default function KeywordInput({ value, onChange }: { value: string[]; onC
       <div className="mt-2 flex flex-wrap gap-1.5">
         {SUGGESTIONS.filter((s) => !value.includes(s)).map((s) => (
           <button key={s} type="button" onClick={() => addMany(s)}
-            className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-600 hover:border-brand-500 hover:text-brand-700">
+            className="rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-zinc-400 transition hover:border-brand-400/50 hover:bg-brand-500/10 hover:text-brand-200">
             + {s}
           </button>
         ))}

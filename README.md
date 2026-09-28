@@ -1,6 +1,18 @@
-# Creator Finder
+# Threads Purge
 
-An internal tool for finding **Threads** accounts that:
+Threads Purge is an internal control panel with three sections:
+
+| Section | What it does |
+|---|---|
+| **Profile Search Engine** | Finds Threads creators whose visual aesthetic matches a reference set (details below). Results can be saved, ignored, or sent to an account's profile list with one click |
+| **Models/Accs** | Your models → each model's Threads accounts → each account's list of profiles, with a checkbox per profile to mark it as selected |
+| **Settings** | Threads OAuth connection, granted scopes, API tests, score weights, cache TTLs, and what the official API does and doesn't provide |
+
+The UI is a dark, minimalist Next.js app with entrance, hover and progress animations. The animations respect `prefers-reduced-motion`.
+
+## Profile Search Engine
+
+It finds **Threads** accounts that:
 
 1. look visually similar (overall aesthetic, not identity) to a reference model,
 2. have posted recently,
@@ -45,14 +57,16 @@ backend/
       similarity.py        centroid, cosine → 0-100, 70% best + 30% top-5 aggregation
       scoring.py           activity, signals, keyword relevance, engagement, ranking, filters
       dedup.py, cache.py, images.py, app_config.py
-    routers/               auth, references, search, creators, settings
-  tests/                   pytest suite (78 tests)
+    usernames.py           Threads username / profile-URL parsing
+    routers/               auth, references, search, creators, models_accounts, settings
+  tests/                   pytest suite (96 tests)
   requirements.txt, requirements-ml.txt, requirements-dev.txt, Dockerfile
 frontend/
-  app/page.tsx             search + results
-  app/saved/page.tsx       saved / ignored creators
-  app/settings/page.tsx    Threads connection, scopes, tests, weights, TTLs, data availability
-  components/, lib/        UI components, typed API client
+  app/search/page.tsx          Profile Search Engine: search + results
+  app/search/saved/page.tsx    saved / ignored creators
+  app/models/page.tsx          Models/Accs: models, accounts, per-account profile lists
+  app/settings/page.tsx        Threads connection, scopes, tests, weights, TTLs, data availability
+  components/, lib/            Sidebar, toasts, result card, "Add to list" popover, typed API client
 docker-compose.yml         postgres + backend + frontend
 .env.example
 ```
@@ -91,7 +105,7 @@ uvicorn app.main:app --reload --port 8000       # API docs: http://localhost:800
 
 # terminal 2
 cd frontend
-npm run dev                                     # http://localhost:3000
+npm run dev                                     # http://localhost:3000 → /search
 ```
 
 SQLite is used by default (`backend/data/creator_finder.db`) and the tables are created on startup.
@@ -282,9 +296,25 @@ Then return it from `default_deps_factory` in `backend/app/deps.py`, for example
 | GET | `/api/search/{id}` | status, progress, warnings, error |
 | GET | `/api/search/{id}/results?sort=best\|active\|engagement\|newest` | ranked results |
 | POST | `/api/creators/{id}/save\|ignore\|reset` | |
+| GET/POST | `/api/models` | list (with accounts and counts) / create `{name, color?}` |
+| GET/PATCH/DELETE | `/api/models/{id}` | detail including every account's profile list |
+| POST | `/api/models/{id}/accounts` | `{username, label?}` (accepts `@user` or a profile URL) |
+| GET | `/api/accounts` | flat list, used by the "Add to list" picker |
+| GET/PATCH/DELETE | `/api/accounts/{id}` | |
+| POST | `/api/accounts/{id}/profiles` | `{usernames: "…" \| [...], selected?, source?}` returns added / duplicates / invalid |
+| POST | `/api/accounts/{id}/profiles/select` | `{selected, ids?}` bulk check / uncheck |
+| PATCH/DELETE | `/api/profiles/{id}` | `{selected?, note?}` |
 | GET | `/api/creators?status=saved\|ignored` | saved-creators page |
 | GET/PUT | `/api/settings` | config, connection, scopes, data availability |
 | POST | `/api/settings/test-connection`, `/api/settings/test-keyword-search` | |
+
+## Models/Accs
+
+- **Model**: name, colour and notes. Deleting a model deletes its accounts and their lists.
+- **Account**: a Threads username (unique per model) and an optional label. Accounts keep the order they were added in.
+- **Profile list** (per account): paste usernames or `threads.net/@user` / `threads.com/@user` links, separated by commas, spaces or new lines. Duplicates and invalid names are reported, not silently dropped. Each profile has a checkbox (`selected`). You can select all, select none, or select only what matches the filter.
+- Profiles the search engine has already analysed show their avatar, display name and follower count, when the official API provided one.
+- From the search engine, a result card's **+** button (or "Add all N to list") adds creators to any account's list.
 
 ## Logging
 

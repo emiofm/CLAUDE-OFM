@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, API_URL, jsonInit } from "@/lib/api";
 import type { AppConfig, SettingsResponse } from "@/lib/types";
+import { PageHeader } from "@/components/ui";
 
 const WEIGHT_LABELS: Record<keyof AppConfig["weights"], string> = {
   visual_similarity: "Visual similarity",
@@ -47,7 +48,7 @@ function SettingsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!data || !cfg) return <p className="text-sm text-slate-500">{msg?.text || "Loading…"}</p>;
+  if (!data || !cfg) return <p className="text-sm text-zinc-400">{msg?.text || "Loading…"}</p>;
   const t = data.threads;
 
   const save = async () => {
@@ -93,26 +94,27 @@ function SettingsInner() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+      <PageHeader title="Settings" subtitle="Threads API connection, search engine configuration and data availability." />
       {msg && (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+        <div className={`rounded-xl border px-4 py-3 text-sm ${msg.ok ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
           {msg.text}
         </div>
       )}
 
-      <section className="card space-y-4 p-6">
+      <section className="card animate-fade-up space-y-4 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold">Threads connection</h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-zinc-400">
               Status:{" "}
-              <span className={t.connected ? "font-semibold text-emerald-600" : "font-semibold text-slate-500"}>
+              <span className={`inline-flex items-center gap-1.5 ${t.connected ? "font-semibold text-emerald-400" : "font-semibold text-zinc-400"}`}>
+                <span className={`h-2 w-2 rounded-full ${t.connected ? "animate-pulse-ring bg-emerald-400" : "bg-zinc-600"}`} />
                 {t.connected ? "Connected" : "Not connected"}
               </span>
               {t.username && <> as @{t.username}</>}
               {t.token_source === "env" && " (token from THREADS_ACCESS_TOKEN)"}
             </p>
-            {t.expires_at && <p className="text-xs text-slate-500">Token expires {new Date(t.expires_at).toLocaleString()}</p>}
+            {t.expires_at && <p className="text-xs text-zinc-400">Token expires {new Date(t.expires_at).toLocaleString()}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <a href={`${API_URL}/auth/threads`} className={`btn-primary ${t.app_configured ? "" : "pointer-events-none opacity-50"}`}>
@@ -124,7 +126,7 @@ function SettingsInner() {
           </div>
         </div>
         {!t.app_configured && (
-          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
             THREADS_APP_ID and THREADS_APP_SECRET are not set on the server. Add them to <code>.env</code> and restart the backend.
           </p>
         )}
@@ -133,11 +135,11 @@ function SettingsInner() {
             <div className="label">Granted scopes</div>
             {t.granted_scopes ? (
               <div className="flex flex-wrap gap-1">
-                {t.granted_scopes.map((s) => <span key={s} className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{s}</span>)}
+                {t.granted_scopes.map((s) => <span key={s} className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300 ring-1 ring-emerald-500/20">{s}</span>)}
               </div>
-            ) : <span className="text-slate-400">Unknown (connect via OAuth)</span>}
+            ) : <span className="text-zinc-500">Unknown (connect via OAuth)</span>}
             {t.missing_scopes.length > 0 && (
-              <p className="mt-2 text-xs text-amber-700">Missing: {t.missing_scopes.join(", ")}</p>
+              <p className="mt-2 text-xs text-amber-300">Missing: {t.missing_scopes.join(", ")}</p>
             )}
           </div>
           <div>
@@ -152,15 +154,15 @@ function SettingsInner() {
             <code className="text-xs">{data.embedding_model}</code>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-          <span className="text-sm text-slate-600">Test keyword search (1 request):</span>
+        <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.05] pt-4">
+          <span className="text-sm text-zinc-300">Test keyword search (1 request):</span>
           <input className="input !w-48" value={testQ} onChange={(e) => setTestQ(e.target.value)} />
           <button className="btn-secondary" onClick={testSearch} disabled={!t.connected}>Run</button>
         </div>
-        {testOut && <pre className="whitespace-pre-wrap rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{testOut}</pre>}
+        {testOut && <pre className="whitespace-pre-wrap rounded-lg bg-black/40 p-3 font-mono text-xs text-zinc-200 ring-1 ring-white/10 animate-fade-in">{testOut}</pre>}
       </section>
 
-      <section className="card space-y-5 p-6">
+      <section className="card animate-fade-up space-y-5 p-6 [animation-delay:80ms]">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Search configuration</h2>
           <div className="flex gap-2">
@@ -182,7 +184,7 @@ function SettingsInner() {
                 onChange={(v) => setCfg({ ...cfg, weights: { ...cfg.weights, [k]: v } })} />
             ))}
           </div>
-          <p className="mt-2 text-xs text-slate-500">Components that are unavailable for a creator are excluded and the remaining weights are re-normalised — never counted as zero.</p>
+          <p className="mt-2 text-xs text-zinc-400">Components that are unavailable for a creator are excluded and the remaining weights are re-normalised — never counted as zero.</p>
         </div>
 
         <div>
@@ -243,26 +245,26 @@ function SettingsInner() {
         </div>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2">
+      <section className="grid animate-fade-up gap-6 [animation-delay:160ms] md:grid-cols-2">
         <div className="card p-6">
-          <h2 className="mb-3 font-semibold text-emerald-700">Available from official Threads API</h2>
+          <h2 className="mb-3 font-semibold text-emerald-300">Available from official Threads API</h2>
           <ul className="space-y-3 text-sm">
             {data.data_availability.available.map((a) => (
               <li key={a.metric}>
                 <div className="font-medium">{a.metric}</div>
-                <div className="text-xs text-slate-500">{a.endpoint} · {a.permission}</div>
-                <div className="text-xs text-slate-500">{a.notes}</div>
+                <div className="text-xs text-zinc-400">{a.endpoint} · {a.permission}</div>
+                <div className="text-xs text-zinc-400">{a.notes}</div>
               </li>
             ))}
           </ul>
         </div>
         <div className="card p-6">
-          <h2 className="mb-3 font-semibold text-slate-700">Not available from official Threads API</h2>
+          <h2 className="mb-3 font-semibold text-zinc-200">Not available from official Threads API</h2>
           <ul className="space-y-3 text-sm">
             {data.data_availability.unavailable.map((a) => (
               <li key={a.metric}>
                 <div className="font-medium">{a.metric}</div>
-                <div className="text-xs text-slate-500">{a.notes}</div>
+                <div className="text-xs text-zinc-400">{a.notes}</div>
               </li>
             ))}
           </ul>

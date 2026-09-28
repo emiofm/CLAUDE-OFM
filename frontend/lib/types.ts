@@ -133,3 +133,46 @@ export type SettingsResponse = {
   embedding_model: string;
   data_availability: { available: Availability[]; unavailable: Availability[] };
 };
+
+export type TargetProfile = {
+  id: number;
+  account_id: number;
+  username: string;
+  selected: boolean;
+  note: string | null;
+  source: string | null;
+  created_at: string;
+  profile_url: string;
+  creator: Creator | null;
+};
+
+export type Account = {
+  id: number;
+  talent_id: number;
+  username: string;
+  label: string | null;
+  notes: string | null;
+  position: number;
+  created_at: string;
+  profile_url: string;
+  profiles_total: number;
+  profiles_selected: number;
+  profiles?: TargetProfile[];
+  talent_name?: string;
+};
+
+export type Talent = {
+  id: number;
+  name: string;
+  notes: string | null;
+  color: string | null;
+  created_at: string;
+  accounts: Account[];
+};
+
+export type AddProfilesResponse = {
+  added: string[];
+  duplicates: string[];
+  invalid: string[];
+  account: Account;
+};

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   files: File[];
@@ -16,14 +16,19 @@ export default function UploadDropzone({ files, onChange, min, max }: Props) {
   const [drag, setDrag] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // One object URL per file, revoked when the selection changes (no leaks).
+  const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
+
   const add = useCallback(
     (incoming: FileList | File[]) => {
-      const valid = Array.from(incoming).filter((f) => ACCEPT.includes(f.type));
-      if (valid.length < Array.from(incoming).length) setError("Only JPG, PNG or WEBP images are accepted.");
-      else setError(null);
-      const merged = [...files, ...valid].slice(0, max);
-      if (files.length + valid.length > max) setError(`Maximum ${max} images.`);
-      onChange(merged);
+      const all = Array.from(incoming);
+      const valid = all.filter((f) => ACCEPT.includes(f.type));
+      let msg: string | null = null;
+      if (valid.length < all.length) msg = "Only JPG, PNG or WEBP images are accepted.";
+      if (files.length + valid.length > max) msg = `Maximum ${max} images.`;
+      setError(msg);
+      onChange([...files, ...valid].slice(0, max));
     },
     [files, max, onChange],
   );
@@ -42,16 +47,19 @@ export default function UploadDropzone({ files, onChange, min, max }: Props) {
           add(e.dataTransfer.files);
         }}
         onClick={() => inputRef.current?.click()}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition ${
-          drag ? "border-brand-500 bg-brand-50" : "border-slate-300 hover:border-brand-500 hover:bg-slate-50"
+        className={`group relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed px-6 py-9 text-center transition duration-300 ${
+          drag
+            ? "scale-[1.01] border-brand-400 bg-brand-500/10"
+            : "border-white/15 bg-white/[0.02] hover:border-brand-400/60 hover:bg-white/[0.04]"
         }`}
       >
-        <svg className="mb-2 h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M3 16.5V18a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 18v-1.5M16.5 7.5L12 3m0 0L7.5 7.5M12 3v13.5" />
-        </svg>
-        <p className="text-sm font-medium text-slate-700">Drag & drop reference photos, or click to browse</p>
-        <p className="mt-1 text-xs text-slate-500">
+        <div className={`mb-3 grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-600/40 to-accent-500/30 text-brand-200 transition duration-300 ${drag ? "-translate-y-1 scale-110" : "group-hover:-translate-y-0.5"}`}>
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5V18a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 18v-1.5M16.5 7.5L12 3m0 0L7.5 7.5M12 3v13.5" />
+          </svg>
+        </div>
+        <p className="text-sm font-medium text-zinc-200">Drop reference photos, or click to browse</p>
+        <p className="mt-1 text-xs text-zinc-500">
           {min}–{max} images · compares overall visual style, not identity (no face recognition)
         </p>
         <input
@@ -66,17 +74,21 @@ export default function UploadDropzone({ files, onChange, min, max }: Props) {
           }}
         />
       </div>
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-2 animate-fade-in text-xs text-red-400">{error}</p>}
       {files.length > 0 && (
         <div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-8 lg:grid-cols-10">
           {files.map((f, i) => (
-            <div key={`${f.name}-${i}`} className="group relative aspect-square overflow-hidden rounded-lg bg-slate-100">
+            <div
+              key={`${f.name}-${f.size}-${i}`}
+              style={{ animationDelay: `${i * 30}ms` }}
+              className="group relative aspect-square animate-scale-in overflow-hidden rounded-xl ring-1 ring-white/10"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={URL.createObjectURL(f)} alt="" className="h-full w-full object-cover" />
+              <img src={previews[i]} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
               <button
                 type="button"
                 onClick={() => onChange(files.filter((_, j) => j !== i))}
-                className="absolute right-1 top-1 hidden h-5 w-5 place-items-center rounded-full bg-black/60 text-xs text-white group-hover:grid"
+                className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/70 text-xs text-white opacity-0 transition group-hover:opacity-100"
                 aria-label="Remove image"
               >
                 ×
@@ -85,9 +97,18 @@ export default function UploadDropzone({ files, onChange, min, max }: Props) {
           ))}
         </div>
       )}
-      <p className={`mt-2 text-xs ${files.length >= min ? "text-emerald-600" : "text-slate-500"}`}>
-        {files.length} / {max} selected{files.length < min ? ` · at least ${min} required` : ""}
-      </p>
+      <div className="mt-3 flex items-center gap-3">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${files.length >= min ? "bg-gradient-to-r from-emerald-500 to-emerald-400" : "bg-gradient-to-r from-brand-600 to-accent-500"}`}
+            style={{ width: `${(files.length / max) * 100}%` }}
+          />
+        </div>
+        <span className={`text-xs tabular-nums ${files.length >= min ? "text-emerald-400" : "text-zinc-500"}`}>
+          {files.length}/{max}
+          {files.length > 0 && files.length < min ? ` · need ${min - files.length} more` : ""}
+        </span>
+      </div>
     </div>
   );
 }
