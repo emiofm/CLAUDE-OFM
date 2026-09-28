@@ -54,6 +54,6 @@ UNAVAILABLE = [
     },
     {
         "metric": "Links in bio / external monetisation platforms",
-        "notes": "Only inferred as a *possible* signal from bio and post text.",
+        "notes": "Only inferred as a "possible" signal from bio and post text.",
     },
 ]
