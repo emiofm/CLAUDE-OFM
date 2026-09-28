@@ -73,6 +73,18 @@ docker-compose.yml         postgres + backend + frontend
 
 ---
 
+## Windows: open with a double-click
+
+The project root contains three launchers:
+
+| File | What it does |
+|---|---|
+| `Threads Purge.bat` | First run: checks for Python 3.11+ and Node.js 20+ (offers to install them with `winget` if missing), creates `.env` from `.env.example`, installs the backend, installs CLIP (CPU) and downloads the model, then installs and builds the UI. It writes a log to `logs\setup.log` and creates an `Abrir Threads Purge` shortcut with the app icon. Every run: starts the API and the UI in two minimised windows (logs in `logs\`) and opens `http://localhost:3000` as an app window with Edge or Chrome (`--app`). If Threads Purge is already running, it only opens the window |
+| `Detener Threads Purge.bat` | Stops both servers (whatever is listening on ports 8000 and 3000) |
+| `Actualizar Threads Purge.bat` | Stops, runs `git pull` if the folder is a git clone, reinstalls dependencies and rebuilds the UI |
+
+The first run takes 5–15 minutes, mostly for PyTorch and the CLIP model. After that it opens in a few seconds. Your data (`backend\data\`) and `.env` are kept when you update.
+
 ## 1. Install
 
 Requirements: Python 3.11+, Node 20+ (22 recommended). Docker is optional.

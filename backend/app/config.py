@@ -13,6 +13,8 @@ class Settings(BaseSettings):
         env_file=(BACKEND_DIR.parent / ".env", BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        # "DATABASE_URL=" (empty, as in .env.example) means "use the default".
+        env_ignore_empty=True,
     )
 
     # --- Threads / Meta app -------------------------------------------------
@@ -52,7 +54,7 @@ class Settings(BaseSettings):
 
     # --- App ----------------------------------------------------------------
     frontend_url: str = "http://localhost:3000"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     log_level: str = "INFO"
 
     min_reference_images: int = Field(default=3)

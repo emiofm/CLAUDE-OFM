@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Standalone output is only used for the Docker image (set in frontend/Dockerfile);
+  // the Windows launcher runs a normal `next start`.
+  output: process.env.NEXT_STANDALONE === "1" ? "standalone" : undefined,
   reactStrictMode: true,
 };
 

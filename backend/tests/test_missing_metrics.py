@@ -61,3 +61,14 @@ def test_engagement_unavailable_when_no_real_counts():
     assert src == "profile_lookup" and 0 < score < 100
     score2, src2 = engagement_score(post_likes=[10, None], post_replies=[2, None])
     assert src2 == "per_post" and score2 > 0
+
+
+def test_empty_env_values_fall_back_to_defaults(monkeypatch):
+    """.env.example ships `DATABASE_URL=` (empty); that must not break startup."""
+    from app.config import Settings
+
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("EMBEDDING_MODEL", "")
+    s = Settings()
+    assert s.database_url.startswith("sqlite:///")
+    assert s.embedding_model == "openai/clip-vit-base-patch32"
